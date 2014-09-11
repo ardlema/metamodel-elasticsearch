@@ -13,6 +13,7 @@ import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.metadata.IndexMetaData;
 import org.elasticsearch.cluster.metadata.MappingMetaData;
 import org.elasticsearch.common.collect.ImmutableOpenMap;
+import org.elasticsearch.common.hppc.ObjectLookupContainer;
 import org.elasticsearch.common.hppc.cursors.ObjectCursor;
 import org.elasticsearch.common.hppc.cursors.ObjectObjectCursor;
 
@@ -39,7 +40,6 @@ public class ElasticSearchDataContext extends QueryPostprocessDataContext
         List<String> indexNames = new ArrayList<String>();
         ClusterStateResponse clusterStateResponse = client.admin().cluster().prepareState().execute().actionGet();
         ImmutableOpenMap<String,IndexMetaData> indexes = clusterStateResponse.getState().getMetaData().getIndices();
-        //TODO: FOR EACH INDEX GET THE MAPPING
         for (ObjectCursor<String> typeCursor : indexes.keys())
             indexNames.add(typeCursor.value);
         SimpleTableDef[] result = new SimpleTableDef[indexNames.size()];
@@ -48,21 +48,23 @@ public class ElasticSearchDataContext extends QueryPostprocessDataContext
             ClusterState cs = client.admin().cluster().prepareState().setIndices(indexName).execute().actionGet().getState();
             IndexMetaData imd = cs.getMetaData().index(indexName);
             ImmutableOpenMap<String, MappingMetaData> mappings = imd.getMappings();
-
+            ObjectLookupContainer types = mappings.keys();
+            for (Object type: types) {
+                String typeName = ((ObjectCursor) type).value.toString();
                 try {
-                    SimpleTableDef table = detectTable(client, indexName);
+                    SimpleTableDef table = detectTable(client, indexName, typeName);
                     result[i] = table;
                 } catch(Exception e) {}
                 i++;
-
+            }
         }
         return result;
     }
 
-    public static SimpleTableDef detectTable(Client client, String indexName) throws Exception {
+    public static SimpleTableDef detectTable(Client client, String indexName, String typeName) throws Exception {
         ClusterState cs = client.admin().cluster().prepareState().setIndices(indexName).execute().actionGet().getState();
         IndexMetaData imd = cs.getMetaData().index(indexName);
-        MappingMetaData mappingMetaData = imd.mapping("tweet");
+        MappingMetaData mappingMetaData = imd.mapping(typeName);
         Map<String, Object> mp = mappingMetaData.getSourceAsMap();
         Iterator it = mp.entrySet().iterator();
         Map.Entry pair = (Map.Entry)it.next();

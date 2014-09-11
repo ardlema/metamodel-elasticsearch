@@ -8,14 +8,14 @@ import org.elasticsearch.client.Client;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.metadata.IndexMetaData;
 import org.elasticsearch.cluster.metadata.MappingMetaData;
+import org.elasticsearch.common.collect.ImmutableOpenMap;
 import org.elasticsearch.common.compress.CompressedString;
+import org.elasticsearch.common.hppc.ObjectLookupContainer;
+import org.elasticsearch.common.hppc.cursors.ObjectCursor;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.apache.metamodel.DataContext;
 
-import java.util.Arrays;
-import java.util.Date;
-import java.util.Iterator;
-import java.util.Map;
+import java.util.*;
 
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
 
@@ -49,11 +49,11 @@ public class ElasticSearchDataContextTest extends TestCase {
         ColumnType[] columnTypes = metaData.getColumnTypes();
 
         assertTrue(columnNames.length==4);
-        assertEquals(columnNames[0],"message");
-        assertEquals(columnNames[1],"postDate");
-        assertEquals(columnNames[2],"anotherDate");
-        assertEquals(columnNames[3],"user");
-        assertTrue(columnTypes.length==4);
+        assertEquals(columnNames[0], "message");
+        assertEquals(columnNames[1], "postDate");
+        assertEquals(columnNames[2], "anotherDate");
+        assertEquals(columnNames[3], "user");
+        assertTrue(columnTypes.length == 4);
         assertEquals(columnTypes[0], ColumnType.BIGINT);
         assertEquals(columnTypes[1], ColumnType.DATE);
         assertEquals(columnTypes[2], ColumnType.DATE);
@@ -65,7 +65,18 @@ public class ElasticSearchDataContextTest extends TestCase {
 
         final DataContext dataContext = new ElasticSearchDataContext(getClient());
 
+        ClusterState cs = getClient().admin().cluster().prepareState().setIndices(indexName).execute().actionGet().getState();
+        IndexMetaData imd = cs.getMetaData().index(indexName);
+        ImmutableOpenMap<String, MappingMetaData> mappings = imd.getMappings();
+        ObjectLookupContainer types = mappings.keys();
+        for (Object type: types) {
+            System.out.println(((ObjectCursor) type).value);
+        }
+
         assertEquals("[twitter]", Arrays.toString(dataContext.getDefaultSchema().getTableNames()));
+
+
+
 /*
         // delete if already exists
         {
