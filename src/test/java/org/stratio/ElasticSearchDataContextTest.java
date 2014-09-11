@@ -23,7 +23,8 @@ public class ElasticSearchDataContextTest extends TestCase {
 
     private EmbeddedElasticsearchServer embeddedElasticsearchServer;
     private String indexName = "twitter";
-    private String indexType = "tweet";
+    private String indexType1 = "tweet1";
+    private String indexType2 = "tweet2";
 
     @Override
     protected void setUp() throws Exception {
@@ -65,28 +66,13 @@ public class ElasticSearchDataContextTest extends TestCase {
 
         final DataContext dataContext = new ElasticSearchDataContext(getClient());
 
-        ClusterState cs = getClient().admin().cluster().prepareState().setIndices(indexName).execute().actionGet().getState();
-        IndexMetaData imd = cs.getMetaData().index(indexName);
-        ImmutableOpenMap<String, MappingMetaData> mappings = imd.getMappings();
-        ObjectLookupContainer types = mappings.keys();
-        for (Object type: types) {
-            System.out.println(((ObjectCursor) type).value);
-        }
-
-        assertEquals("[twitter]", Arrays.toString(dataContext.getDefaultSchema().getTableNames()));
+        assertEquals("[tweet1, tweet2]", Arrays.toString(dataContext.getDefaultSchema().getTableNames()));
 
 
 
 /*
-        // delete if already exists
-        {
-            col.drop();
-            col = db.createCollection("my_collection", null);
-        }
 
 
-        // Instantiate the actual data context
-        final DataContext dataContext = new MongoDbDataContext(db);
 
         assertEquals("[my_collection, system.indexes]", Arrays.toString(dataContext.getDefaultSchema().getTableNames()));
         Table table = dataContext.getDefaultSchema().getTableByName("my_collection");
@@ -199,10 +185,14 @@ public class ElasticSearchDataContextTest extends TestCase {
         BulkRequestBuilder bulkRequest = client.prepareBulk();
 
         try {
-        for (int i = 0; i < 1000; i++) {
-            bulkRequest.add(client.prepareIndex(indexName, indexType)
+        for (int i = 0; i < 500; i++) {
+            bulkRequest.add(client.prepareIndex(indexName, indexType1)
                     .setSource(buildJsonObject(i)));
         }
+        for (int i = 0; i < 500; i++) {
+                bulkRequest.add(client.prepareIndex(indexName, indexType2)
+                        .setSource(buildJsonObject(i)));
+            }
         bulkRequest.execute().actionGet();
         } catch (Exception ex) {
            System.out.println("Exception indexing documents!!!!!");

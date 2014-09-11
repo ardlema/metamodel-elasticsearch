@@ -42,8 +42,7 @@ public class ElasticSearchDataContext extends QueryPostprocessDataContext
         ImmutableOpenMap<String,IndexMetaData> indexes = clusterStateResponse.getState().getMetaData().getIndices();
         for (ObjectCursor<String> typeCursor : indexes.keys())
             indexNames.add(typeCursor.value);
-        SimpleTableDef[] result = new SimpleTableDef[indexNames.size()];
-        int i = 0;
+        List<SimpleTableDef> result = new ArrayList<SimpleTableDef>();
         for (String indexName : indexNames) {
             ClusterState cs = client.admin().cluster().prepareState().setIndices(indexName).execute().actionGet().getState();
             IndexMetaData imd = cs.getMetaData().index(indexName);
@@ -53,12 +52,13 @@ public class ElasticSearchDataContext extends QueryPostprocessDataContext
                 String typeName = ((ObjectCursor) type).value.toString();
                 try {
                     SimpleTableDef table = detectTable(client, indexName, typeName);
-                    result[i] = table;
+                    result.add(table);
                 } catch(Exception e) {}
-                i++;
             }
+
         }
-        return result;
+        SimpleTableDef[] tableDefArray = (SimpleTableDef[]) result.toArray(new SimpleTableDef[result.size()]);
+        return tableDefArray;
     }
 
     public static SimpleTableDef detectTable(Client client, String indexName, String typeName) throws Exception {
@@ -69,7 +69,7 @@ public class ElasticSearchDataContext extends QueryPostprocessDataContext
         Iterator it = mp.entrySet().iterator();
         Map.Entry pair = (Map.Entry)it.next();
         ElasticSearchMetaData metaData = ElasticSearchMetaDataParser.parse(pair.getValue().toString());
-        return new SimpleTableDef(indexName, metaData.getColumnNames(), metaData.getColumnTypes());
+        return new SimpleTableDef(typeName, metaData.getColumnNames(), metaData.getColumnTypes());
     }
 
 
