@@ -6,6 +6,7 @@ import org.apache.metamodel.data.DataSet;
 import org.apache.metamodel.schema.ColumnType;
 import org.apache.metamodel.schema.Table;
 import org.elasticsearch.action.bulk.BulkRequestBuilder;
+import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.stratio.utils.EmbeddedElasticsearchServer;
@@ -38,8 +39,8 @@ public class ElasticSearchDataContextTest extends TestCase {
         return embeddedElasticsearchServer.getClient();
     }
 
-    public void testQueryWithWhereClause() throws Exception {
-        indexOneThousandDocuments(getClient());
+    public void testSimpleQuery() throws Exception {
+        indexOneDocumentPerIndex(getClient());
         // Waiting for indexing the data....
         Thread.sleep(2000);
 
@@ -59,7 +60,8 @@ public class ElasticSearchDataContextTest extends TestCase {
 
         try {
             assertTrue(ds.next());
-            //TODO: CHECK WE ARE GETTING THE PROPER VALUES
+            assertEquals("Row[values=[user1, 1]]",
+                    ds.getRow().toString());
         } finally {
             ds.close();
         }
@@ -69,12 +71,12 @@ public class ElasticSearchDataContextTest extends TestCase {
         BulkRequestBuilder bulkRequest = client.prepareBulk();
 
         try {
-        for (int i = 0; i < 500; i++) {
-            bulkRequest.add(client.prepareIndex(indexName, indexType1)
+        for (int i = 0; i < 5; i++) {
+            bulkRequest.add(client.prepareIndex(indexName, indexType1, new Integer(i).toString())
                     .setSource(buildJsonObject(i)));
         }
-        for (int i = 0; i < 500; i++) {
-                bulkRequest.add(client.prepareIndex(indexName, indexType2)
+        for (int i = 0; i < 5; i++) {
+                bulkRequest.add(client.prepareIndex(indexName, indexType2, new Integer(i).toString())
                         .setSource(buildJsonObject(i)));
             }
         bulkRequest.execute().actionGet();
@@ -82,6 +84,21 @@ public class ElasticSearchDataContextTest extends TestCase {
            System.out.println("Exception indexing documents!!!!!");
         }
 
+    }
+
+    private void indexOneDocumentPerIndex(Client client) {
+        try {
+        client.prepareIndex(indexName, indexType1, "1")
+                .setSource(buildJsonObject(1))
+                .execute()
+                .actionGet();
+        client.prepareIndex(indexName, indexType2, "1")
+                    .setSource(buildJsonObject(1))
+                    .execute()
+                    .actionGet();
+        } catch (Exception ex) {
+            System.out.println("Exception indexing documents!!!!!");
+        }
     }
 
     private XContentBuilder buildJsonObject(int elementId) throws Exception {
