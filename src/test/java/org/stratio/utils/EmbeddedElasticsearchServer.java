@@ -1,4 +1,4 @@
-package org.stratio;
+package org.stratio.utils;
 
 import org.apache.commons.io.FileUtils;
 import org.elasticsearch.client.Client;
@@ -25,7 +25,7 @@ public class EmbeddedElasticsearchServer {
         this.dataDirectory = dataDirectory;
 
         ImmutableSettings.Builder elasticsearchSettings = ImmutableSettings.settingsBuilder()
-                .put("http.enabled", "false")
+                .put("http.enabled", "true")
                 .put("path.data", dataDirectory);
 
         node = nodeBuilder()

@@ -1,13 +1,18 @@
 package org.stratio;
 
-import com.sun.corba.se.spi.ior.ObjectId;
 import org.apache.metamodel.DataContext;
 import org.apache.metamodel.MetaModelException;
 import org.apache.metamodel.QueryPostprocessDataContext;
 import org.apache.metamodel.data.DataSet;
+import org.apache.metamodel.query.FilterItem;
+import org.apache.metamodel.query.FromItem;
+import org.apache.metamodel.query.Query;
+import org.apache.metamodel.query.SelectItem;
 import org.apache.metamodel.schema.*;
 import org.apache.metamodel.util.SimpleTableDef;
 import org.elasticsearch.action.admin.cluster.state.ClusterStateResponse;
+import org.elasticsearch.action.search.SearchRequestBuilder;
+import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.metadata.IndexMetaData;
@@ -15,16 +20,20 @@ import org.elasticsearch.cluster.metadata.MappingMetaData;
 import org.elasticsearch.common.collect.ImmutableOpenMap;
 import org.elasticsearch.common.hppc.ObjectLookupContainer;
 import org.elasticsearch.common.hppc.cursors.ObjectCursor;
-import org.elasticsearch.common.hppc.cursors.ObjectObjectCursor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
 public class ElasticSearchDataContext extends QueryPostprocessDataContext
         implements DataContext {
 
+    private static final Logger logger = LoggerFactory.getLogger(ElasticSearchDataContext.class);
+
     private final Client elasticSearchClient;
     private final SimpleTableDef[] tableDefs;
     private Schema schema;
+    private static HashMap<String,String> typeAndIndexes = new HashMap<>();
 
     public ElasticSearchDataContext(Client client, SimpleTableDef... tableDefs) {
         this.elasticSearchClient = client;
@@ -37,12 +46,12 @@ public class ElasticSearchDataContext extends QueryPostprocessDataContext
     }
 
     public static SimpleTableDef[] detectSchema(Client client) {
-        List<String> indexNames = new ArrayList<String>();
+        List<String> indexNames = new ArrayList<>();
         ClusterStateResponse clusterStateResponse = client.admin().cluster().prepareState().execute().actionGet();
         ImmutableOpenMap<String,IndexMetaData> indexes = clusterStateResponse.getState().getMetaData().getIndices();
         for (ObjectCursor<String> typeCursor : indexes.keys())
             indexNames.add(typeCursor.value);
-        List<SimpleTableDef> result = new ArrayList<SimpleTableDef>();
+        List<SimpleTableDef> result = new ArrayList<>();
         for (String indexName : indexNames) {
             ClusterState cs = client.admin().cluster().prepareState().setIndices(indexName).execute().actionGet().getState();
             IndexMetaData imd = cs.getMetaData().index(indexName);
@@ -50,6 +59,7 @@ public class ElasticSearchDataContext extends QueryPostprocessDataContext
             ObjectLookupContainer types = mappings.keys();
             for (Object type: types) {
                 String typeName = ((ObjectCursor) type).value.toString();
+                typeAndIndexes.put(typeName, indexName);
                 try {
                     SimpleTableDef table = detectTable(client, indexName, typeName);
                     result.add(table);
@@ -97,4 +107,106 @@ public class ElasticSearchDataContext extends QueryPostprocessDataContext
     protected DataSet materializeMainSchemaTable(Table table, Column[] columns, int i) {
         return null;  //To change body of implemented methods use File | Settings | File Templates.
     }
+
+    @Override
+    public DataSet executeQuery(Query query) {
+        // Check for queries containing only simple selects and where clauses,
+        // or if it is a COUNT(*) query.
+
+        // if from clause only contains a main schema table
+        List<FromItem> fromItems = query.getFromClause().getItems();
+        if (fromItems.size() == 1 && fromItems.get(0).getTable() != null && fromItems.get(0).getTable().getSchema() == schema) {
+            final Table table = fromItems.get(0).getTable();
+
+            // if GROUP BY, HAVING and ORDER BY clauses are not specified
+            if (query.getGroupByClause().isEmpty() && query.getHavingClause().isEmpty() && query.getOrderByClause().isEmpty()) {
+
+                final List<FilterItem> whereItems = query.getWhereClause().getItems();
+
+                // if all of the select items are "pure" column selection
+                boolean allSelectItemsAreColumns = true;
+                List<SelectItem> selectItems = query.getSelectClause().getItems();
+
+                // if it is a
+                // "SELECT [columns] FROM [table] WHERE [conditions]"
+                // query.
+                for (SelectItem selectItem : selectItems) {
+                    if (selectItem.getFunction() != null || selectItem.getColumn() == null) {
+                        allSelectItemsAreColumns = false;
+                        break;
+                    }
+                }
+
+                if (allSelectItemsAreColumns) {
+                    logger.debug("Query can be expressed in full ElasticSearch, no post processing needed.");
+
+                    // prepare for a non-post-processed query
+                    Column[] columns = new Column[selectItems.size()];
+                    for (int i = 0; i < columns.length; i++) {
+                        columns[i] = selectItems.get(i).getColumn();
+                    }
+
+                    int firstRow = (query.getFirstRow() == null ? 1 : query.getFirstRow());
+                    int maxRows = (query.getMaxRows() == null ? -1 : query.getMaxRows());
+
+                    final DataSet dataSet = materializeMainSchemaTableInternal(table, columns, whereItems, firstRow, maxRows,
+                            false);
+                    return dataSet;
+                }
+            }
+        }
+        logger.debug("Query will be simplified for ElasticSearch and post processed.");
+        return super.executeQuery(query);
+    }
+
+    private DataSet materializeMainSchemaTableInternal(Table table, Column[] columns, List<FilterItem> whereItems, int firstRow,
+                                                       int maxRows, boolean queryPostProcessed) {
+        //final SearchRequestBuilder collection = elasticSearchClient.prepareSearch(typeAndIndexes.get(table.getName())).setTypes(table.getName());
+        ClusterStateResponse clusterStateResponse = elasticSearchClient.admin().cluster().prepareState().execute().actionGet();
+        ImmutableOpenMap<String,IndexMetaData> indexes = clusterStateResponse.getState().getMetaData().getIndices();
+        //final SearchRequestBuilder collection = elasticSearchClient.prepareSearch("twitter").setTypes("tweet1");
+
+        if (whereItems != null && !whereItems.isEmpty()) {
+            for (FilterItem item : whereItems) {
+                //item.
+                //convertToCursorObject(query, item);
+            }
+        }
+
+        SearchResponse response = elasticSearchClient.prepareSearch().execute().actionGet();
+
+        //SearchResponse response = collection.execute().actionGet();
+
+        return new ElasticSearchDataSet(response, columns, queryPostProcessed);
+        /*
+        final DBObject query = createElasticSearchQuery(table, whereItems);
+
+        logger.info("Executing MongoDB 'find' query: {}", query);
+        DBCursor cursor = collection.find(query);
+
+        if (maxRows > 0) {
+            cursor = cursor.limit(maxRows);
+        }
+        if (firstRow > 1) {
+            final int skip = firstRow - 1;
+            cursor = cursor.skip(skip);
+        }
+
+        return new MongoDbDataSet(cursor, columns, queryPostProcessed);*/
+    }
+
+    /*protected BasicDBObject createElasticSearchQuery(Table table, List<FilterItem> whereItems) {
+        assert _schema == table.getSchema();
+
+        final BasicDBObject query = new BasicDBObject();
+        if (whereItems != null && !whereItems.isEmpty()) {
+            for (FilterItem item : whereItems) {
+                convertToCursorObject(query, item);
+            }
+        }
+
+        return query;
+    }*/
+
+
 }
