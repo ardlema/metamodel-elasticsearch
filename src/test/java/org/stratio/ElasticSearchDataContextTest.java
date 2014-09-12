@@ -6,7 +6,6 @@ import org.apache.metamodel.data.DataSet;
 import org.apache.metamodel.schema.ColumnType;
 import org.apache.metamodel.schema.Table;
 import org.elasticsearch.action.bulk.BulkRequestBuilder;
-import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.stratio.utils.EmbeddedElasticsearchServer;
@@ -67,15 +66,35 @@ public class ElasticSearchDataContextTest extends TestCase {
         }
     }
 
-    private void indexOneThousandDocuments(Client client) {
+    public void testQueryWithEqualsWhereClause() throws Exception {
+        indexTenDocumentsPerIndex(getClient());
+        // Waiting for indexing the data....
+        Thread.sleep(2000);
+
+        final DataContext dataContext = new ElasticSearchDataContext(getClient());
+        DataSet ds = dataContext.query().from("tweet1").select("user").and("message").where("user").isEquals("user4").execute();
+        assertEquals(ElasticSearchDataSet.class, ds.getClass());
+        assertFalse(((ElasticSearchDataSet) ds).isQueryPostProcessed());
+
+        try {
+            assertTrue(ds.next());
+            assertEquals("Row[values=[user4, 4]]",
+                    ds.getRow().toString());
+            assertFalse(ds.next());
+        } finally {
+            ds.close();
+        }
+    }
+
+    private void indexTenDocumentsPerIndex(Client client) {
         BulkRequestBuilder bulkRequest = client.prepareBulk();
 
         try {
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 10; i++) {
             bulkRequest.add(client.prepareIndex(indexName, indexType1, new Integer(i).toString())
                     .setSource(buildJsonObject(i)));
         }
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 10; i++) {
                 bulkRequest.add(client.prepareIndex(indexName, indexType2, new Integer(i).toString())
                         .setSource(buildJsonObject(i)));
             }

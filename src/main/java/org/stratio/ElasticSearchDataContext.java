@@ -20,6 +20,7 @@ import org.elasticsearch.cluster.metadata.MappingMetaData;
 import org.elasticsearch.common.collect.ImmutableOpenMap;
 import org.elasticsearch.common.hppc.ObjectLookupContainer;
 import org.elasticsearch.common.hppc.cursors.ObjectCursor;
+import org.elasticsearch.index.query.QueryBuilders;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -165,35 +166,23 @@ public class ElasticSearchDataContext extends QueryPostprocessDataContext
         ClusterStateResponse clusterStateResponse = elasticSearchClient.admin().cluster().prepareState().execute().actionGet();
         ImmutableOpenMap<String,IndexMetaData> indexes = clusterStateResponse.getState().getMetaData().getIndices();
         //final SearchRequestBuilder collection = elasticSearchClient.prepareSearch("twitter").setTypes("tweet1");
+        SearchRequestBuilder requestBuilder = elasticSearchClient.prepareSearch();
 
         if (whereItems != null && !whereItems.isEmpty()) {
             for (FilterItem item : whereItems) {
-                //item.
-                //convertToCursorObject(query, item);
+                String operandWithIndexName = item.getSelectItem().toString();
+                int operandNameIndexStart = operandWithIndexName.indexOf(".")+1;
+                String operandWithoutIndexName = operandWithIndexName.substring(operandNameIndexStart);
+                requestBuilder.setQuery(QueryBuilders.termQuery(operandWithoutIndexName, item.getOperand()));
             }
         }
 
-        SearchResponse response = elasticSearchClient.prepareSearch().execute().actionGet();
-
-        //SearchResponse response = collection.execute().actionGet();
+        SearchResponse response = requestBuilder.execute().actionGet();
 
         return new ElasticSearchDataSet(response, columns, queryPostProcessed);
-        /*
-        final DBObject query = createElasticSearchQuery(table, whereItems);
 
-        logger.info("Executing MongoDB 'find' query: {}", query);
-        DBCursor cursor = collection.find(query);
-
-        if (maxRows > 0) {
-            cursor = cursor.limit(maxRows);
-        }
-        if (firstRow > 1) {
-            final int skip = firstRow - 1;
-            cursor = cursor.skip(skip);
-        }
-
-        return new MongoDbDataSet(cursor, columns, queryPostProcessed);*/
     }
+
 
     /*protected BasicDBObject createElasticSearchQuery(Table table, List<FilterItem> whereItems) {
         assert _schema == table.getSchema();
